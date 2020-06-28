@@ -1,0 +1,116 @@
+#!/usr/bin/env node
+
+const fs = require('fs')
+const path = require('path')
+const _ = require('lodash')
+const translate = require('@vitalets/google-translate-api')
+
+const cache = {}
+
+/**
+ * Populate memory cache with cached files
+ */
+const loadCache = lang => {
+  try {
+    cache[lang] = {}
+    const lines = fs.readFileSync(path.join(__dirname, `.cache/${lang}.txt`), 'utf-8').split('\n')
+
+    lines.forEach(line => {
+      const [origin, translation] = line.split('|')
+      if (origin) {
+        cache[lang][origin] = translation
+      }
+    })
+  } catch {}
+}
+
+/**
+ * Cache translation into file
+ */
+const cacheTranslation = (key, value, lang) => {
+  const line = `${key}|${value}\n`
+  cache[lang][key] = value
+  fs.appendFileSync(path.join(__dirname, `.cache/${lang}.txt`), line)
+  return value
+}
+
+/**
+ * Safely read a json file
+ */
+const safeRead = filePath => {
+  try {
+    return JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Iterate through object (possibly) nested properties and translate them
+ */
+const iterLeaves = (value, lang, keyChain = [], acc = {}) => {
+  if (_.isObject(value)) {
+    return _.chain(value)
+      .reduce((handlers, v, k) => handlers.concat(iterLeaves(v, lang, keyChain.concat(k), acc)), [])
+      .flattenDeep()
+      .value()
+  }
+
+  if (typeof value !== 'string') {
+    return value
+  }
+
+  return () => {
+    if (cache[lang] && cache[lang][value]) {
+      _.set(acc, keyChain, cache[lang][value])
+      return acc
+    }
+
+    console.log(`Translating "${value}" to ${lang}.`)
+
+    return translate(value, { to: lang })
+      .then(res => cacheTranslation(value, res.text, lang))
+      .catch(err => console.log('An error occured:', err))
+      .then(text => {
+        _.set(acc, keyChain, text)
+        return acc
+      })
+  }
+}
+
+const inputPath = process.argv[2]
+const input = safeRead(inputPath)
+
+if (!input) {
+  console.log('Input file not found.')
+  console.log('Usage: jtranslate ./source.json fr,uk')
+  process.exit(1)
+}
+
+const inputDir = path.dirname(inputPath)
+
+const langs = process.argv[3].split(',')
+if (!langs.length) {
+  console.log("You should probably provide at least one language, just sayin'")
+  process.exit(1)
+}
+
+langs
+  .reduce(async (acc, lang) => {
+    await acc
+
+    loadCache(lang)
+
+    const leaves = iterLeaves(input, lang)
+    const out = await leaves.reduce((acc, leaf) => acc.then(leaf), Promise.resolve(null))
+
+    const outputPath = path.join(inputDir, `./${lang}.json`)
+    const existing = safeRead(outputPath)
+
+    fs.writeFileSync(outputPath, JSON.stringify(existing ? _.merge(out, existing) : out, null, 2))
+    return null
+  }, Promise.resolve(null))
+  .then(() => {
+    console.log('[Done]')
+    process.exit(0)
+  })
