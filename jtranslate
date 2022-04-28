@@ -104,7 +104,7 @@ langs
     const leaves = iterLeaves(input, lang)
     const out = await leaves.reduce((acc, leaf) => acc.then(leaf), Promise.resolve(null))
 
-    const outputPath = path.join(inputDir, `./${lang}.json`)
+    const outputPath = path.join(inputDir, `../${lang}/common.json`)
     const existing = safeRead(outputPath)
 
     fs.writeFileSync(outputPath, JSON.stringify(existing ? _.merge(out, existing) : out, null, 2))

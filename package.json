@@ -1,14 +1,15 @@
 {
   "name": "jtranslate",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Translate json files",
   "dependencies": {
-    "@vitalets/google-translate-api": "^3.0.0",
-    "lodash": "^4.17.15"
+    "@vitalets/google-translate-api": "^8.0.0",
+    "lodash": "^4.17.21"
   },
   "bin": {
     "jtranslate": "./jtranslate"
   },
-  "author": "Balthazar Gronon <git@balthazar.dev>",
+  "homepage": "https://github.com/balthazar/jtranslate",
+  "author": "Balthazar <git@balthazar.dev>",
   "license": "MIT"
 }
