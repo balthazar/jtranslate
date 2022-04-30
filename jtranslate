@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const fs = require('fs')
+const fs = require('fs/promises')
 const path = require('path')
 const _ = require('lodash')
 const translate = require('@vitalets/google-translate-api')
@@ -10,10 +10,11 @@ const cache = {}
 /**
  * Populate memory cache with cached files
  */
-const loadCache = lang => {
+const loadCache = async lang => {
   try {
     cache[lang] = {}
-    const lines = fs.readFileSync(path.join(__dirname, `.cache/${lang}.txt`), 'utf-8').split('\n')
+    const data = await fs.readFile(path.join(__dirname, `.cache/${lang}.txt`), 'utf-8')
+    const lines = data.split('\n')
 
     lines.forEach(line => {
       const [origin, translation] = line.split('|')
@@ -27,19 +28,20 @@ const loadCache = lang => {
 /**
  * Cache translation into file
  */
-const cacheTranslation = (key, value, lang) => {
+const cacheTranslation = async (key, value, lang) => {
   const line = `${key}|${value}\n`
   cache[lang][key] = value
-  fs.appendFileSync(path.join(__dirname, `.cache/${lang}.txt`), line)
+  await fs.appendFile(path.join(__dirname, `.cache/${lang}.txt`), line)
   return value
 }
 
 /**
  * Safely read a json file
  */
-const safeRead = filePath => {
+const safeRead = async filePath => {
   try {
-    return JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf-8'))
+    const data = await fs.readFile(path.resolve(filePath), 'utf-8')
+    return JSON.parse(data)
   } catch {
     return null
   }
@@ -56,9 +58,7 @@ const iterLeaves = (value, lang, keyChain = [], acc = {}) => {
       .value()
   }
 
-  if (typeof value !== 'string') {
-    return value
-  }
+  if (typeof value !== 'string') return value
 
   return () => {
     if (cache[lang] && cache[lang][value]) {
@@ -78,39 +78,38 @@ const iterLeaves = (value, lang, keyChain = [], acc = {}) => {
   }
 }
 
-const inputPath = process.argv[2]
-const input = safeRead(inputPath)
+const main = async () => {
+  const inputPath = process.argv[2]
+  const input = await safeRead(inputPath)
 
-if (!input) {
-  console.log('Input file not found.')
-  console.log('Usage: jtranslate ./source.json fr,uk')
-  process.exit(1)
-}
+  if (!input) {
+    console.log('Input file not found.')
+    console.log('Usage: jtranslate ./source.json fr,uk')
+    process.exit(1)
+  }
 
-const inputDir = path.dirname(inputPath)
+  const inputDir = path.dirname(inputPath)
 
-const langs = process.argv[3].split(',')
-if (!langs.length) {
-  console.log("You should probably provide at least one language, just sayin'")
-  process.exit(1)
-}
+  const langs = process.argv[3].split(',')
+  if (!langs.length) {
+    console.log("You should probably provide at least one language, just sayin'")
+    process.exit(1)
+  }
 
-langs
-  .reduce(async (acc, lang) => {
-    await acc
-
-    loadCache(lang)
+  for (const lang of langs) {
+    await loadCache(lang)
 
     const leaves = iterLeaves(input, lang)
     const out = await leaves.reduce((acc, leaf) => acc.then(leaf), Promise.resolve(null))
 
-    const outputPath = path.join(inputDir, `../${lang}/common.json`)
-    const existing = safeRead(outputPath)
+    const outputPath = path.join(inputDir, `./${lang}.json`)
+    const existing = await safeRead(outputPath)
 
-    fs.writeFileSync(outputPath, JSON.stringify(existing ? _.merge(out, existing) : out, null, 2))
-    return null
-  }, Promise.resolve(null))
-  .then(() => {
-    console.log('[Done]')
-    process.exit(0)
-  })
+    await fs.writeFile(outputPath, JSON.stringify(existing ? _.merge(out, existing) : out, null, 2))
+  }
+
+  console.log('[Done]')
+  process.exit(0)
+}
+
+main()
