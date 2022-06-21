@@ -78,6 +78,16 @@ const iterLeaves = (value, lang, keyChain = [], acc = {}) => {
   }
 }
 
+const recurseOmit = (value, iteratee) => {
+  const cb = v => recurseOmit(v, iteratee)
+
+  return _.isObject(value)
+    ? _.isArray(value)
+      ? _.map(value, cb)
+      : _(value).omitBy(iteratee).mapValues(cb).value()
+    : value
+}
+
 const main = async () => {
   const inputPath = process.argv[2]
   const input = await safeRead(inputPath)
@@ -105,7 +115,17 @@ const main = async () => {
     const outputPath = path.join(inputDir, `./${lang}.json`)
     const existing = await safeRead(outputPath)
 
-    await fs.writeFile(outputPath, JSON.stringify(existing ? _.merge(out, existing) : out, null, 2))
+    const final = existing
+      ? recurseOmit(
+          _.mergeWith(out, existing, (oldValue, newValue, key) => {
+            if (!oldValue) return null
+            return undefined
+          }),
+          _.isNull,
+        )
+      : out
+
+    await fs.writeFile(outputPath, JSON.stringify(final, null, 2))
   }
 
   console.log('[Done]')
